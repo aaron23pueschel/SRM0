@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 
 class SRM0:
-    #static vars
+    #static variables
     Time_ms = 0
     u_rest = -70
     threshold = -55
