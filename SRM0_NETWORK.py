@@ -129,17 +129,17 @@ class neuron_matrix:
     def partial_nk(self,t):
         if t<=0:
             return 0
-        return (1/self.first_neuron.ahp_weight)*np.exp(-(t/self.first_neuron.tau_2))
+        return ((1/self.first_neuron.tau_2)*self.first_neuron.ahp_weight)*np.exp(-(t/self.first_neuron.tau_2))
     def partial_psp(self,t,weight):
         if t<=0:
             return 0
-        return -(t-self.first_neuron.tau_1)*np.exp(-(t/self.first_neuron.tau_1))
+        return ((t-self.first_neuron.tau_1)*np.exp(-(t/self.first_neuron.tau_1)))*(weight/self.first_neuron.tau_1)
     def gradient_descent_linear_update(self,tau):
         for i in range(0,len(self.last_neuron.connections)):
             temp = 0
             for j in self.last_neuron.weights_at_specific_spike_times:
-                temp+=.01*self.ddE_ddw_ij(tau,j[0],j[1])
-            self.last_neuron.connections[i][1]=self.last_neuron.connections[i][1]-temp
+                temp+=50*self.ddE_ddw_ij(tau,j[0],j[1])
+            self.last_neuron.connections[i][1]=self.last_neuron.connections[i][1]+temp
     def ddE_ddw_ij(self,tau,arrival_time,weight):
         temp = 0
         for i in range(0,len(self.last_neuron.spike_arrival_times)):
@@ -151,21 +151,20 @@ class neuron_matrix:
 
     def ddtk_ddw_ij(self,t_l,time,weight):
         t_ij = time
-        sum_psp = self.last_neuron.PSP(t_ij-t_l,weight)
+        sum_psp = self.last_neuron.PSP(SRM0.Time_ms-(t_ij-t_l),weight)
         temp = 0
         for k in self.last_neuron.spike_arrival_times:
             if self.partial_nk(k-t_l) != 0:
-                temp+=self.partial_nk(k-t_l)*self.ddtk_ddw_ij(k,time,weight)
+                temp+=self.partial_nk(SRM0.Time_ms-(k-t_l))*self.ddtk_ddw_ij(k,time,weight)
         num = sum_psp+temp
         temp2 = 0
-        for i in range(0,len(self.last_neuron.connections)):
-            for pairs in self.last_neuron.connections[i][0].weights_at_specific_spike_times:
-                temp2+=self.partial_psp(pairs[0]-t_l,pairs[1])
+        for pairs in self.last_neuron.weights_at_specific_spike_times:
+            temp2+=self.partial_psp(SRM0.Time_ms-(pairs[0]-t_l),pairs[1])
         temp3 = 0
         for k in self.last_neuron.spike_arrival_times:
-            temp3+=self.partial_nk(k-t_l)
+            temp3+=self.partial_nk(SRM0.Time_ms-(k-t_l))
         den = temp3+temp2
-        if den!=0:
+        if den>0.00001:
             return num/den
         return 0
     def ddE_dd_tk_i(self,desired_spike_times,spike_arrival_times,tau,i):
@@ -195,8 +194,8 @@ class neuron_matrix:
                     self.neurons[j].spike_weights.append(1000)
                 temp.pop(0)
             self.update_connections()
-            if i%100==0:
-                self.gradient_descent_linear_update(100)
+            if i%2000==0:
+                self.gradient_descent_linear_update(1000)
         self.reset()
         temp = input
         for i in range (0,time):
@@ -259,7 +258,7 @@ def network_1to1(layers,neurons_per_layer):
 def linear(neurons_per_layer):
     temp = []
     for i in range(0,neurons_per_layer):
-        rand = i%2+.75
+        rand = np.random.randint(20,40)/10
         temp.append([i,neurons_per_layer,rand])
     print(temp)
     return temp
@@ -271,7 +270,7 @@ def linear(neurons_per_layer):
 
 
 layers = 1
-neurons_per_layer = 2
+neurons_per_layer = 5
 #edge_list_test = network_1to1(layers,neurons_per_layer)
 edge_list_test = linear(neurons_per_layer)
 u = neuron_matrix(neurons_per_layer*layers+1,edge_list_test)
@@ -280,10 +279,10 @@ delta_t = .1
 time_ = 10000
 
 
-input = [1000,2000,3000,4000,5000,6000,7000,8000,9000]
+input = [1500,2000,2500,3000,3500,4000,4500,5000,5500,6000,6500,7000,7500,8000,8500,9000]
 for i in edge_list_test:
     print(i[2])
-u.main(time_,delta_t,input,[],neurons_per_layer)
+u.main(time_,delta_t,input,[5000],neurons_per_layer)
 
 print(u.last_neuron.weights_at_specific_spike_times)
 #print(u.first_neuron.spike_arrival_times)
