@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import time as timer
 
 
 
@@ -20,11 +21,21 @@ class SRM0:
 
     def __init__(self):
         self.psp_weight = 1
-        self.ahp_weight = 5
+        self.ahp_weight = 10
         self.last_spike = -np.inf    
         self.membrane_potential = self.u_rest
         self.input_spikes = [-np.inf]
         self.connections = []
+        self.spike_arrival_times = []
+        self.spike_weights = [0]
+        self.weights_at_specific_spike_times = []
+        self.in_spike = False
+    def reset(self):
+        self.psp_weight = 1
+        self.ahp_weight = 10
+        self.last_spike = -np.inf    
+        self.membrane_potential = self.u_rest
+        self.input_spikes = [-np.inf]
         self.spike_arrival_times = []
         self.spike_weights = [0]
         self.weights_at_specific_spike_times = []
@@ -50,9 +61,12 @@ class SRM0:
             if self.connections[i][0].in_spike:
                 self.input_spikes.append(self.connections[i][0].Time_ms)
                 self.spike_weights.append(self.connections[i][1])
+                self.weights_at_specific_spike_times.append([self.connections[i][0].Time_ms,self.connections[i][1]])
         for i in range(0,len(self.input_spikes)):
             if self.input_spikes[i]<=self.Time_ms:
                 temp+=self.PSP(self.Time_ms-self.input_spikes[i],self.spike_weights[i])
+            else:
+                break
         if temp+self.AHP(self.Time_ms-self.last_spike)+self.u_rest>self.threshold:
             self.spike()
             self.in_spike = True
@@ -62,13 +76,11 @@ class SRM0:
 
     def update_membrane_potential(self):
         self.sum_MP()
-       
-
     def spike(self):
             self.membrane_potential = self.spike_height
             self.last_spike = self.Time_ms
-            self.input_spikes = []
-            self.spike_weights = []
+            self.input_spikes.clear()
+            self.spike_weights.clear()
             self.spike_arrival_times.append(self.Time_ms)
     def spike_reset(self):
             self.membrane_potential = self.u_rest
@@ -93,7 +105,10 @@ class neuron_matrix:
         self.first_neuron
         self.last_neuron
         
-    
+    def reset(self):
+        SRM0.Time_ms = 0
+        for i in self.neurons:
+            i.reset()
     def init_neurons(self):
         for i in range(0,self.number_of_neurons):
             self.neurons.append(SRM0())
@@ -110,6 +125,33 @@ class neuron_matrix:
     def update_connections(self):
         for i in self.neurons:
             i.update_membrane_potential()
+    def main(self,time,delta_t,input):
+        y1 =[]
+        y2 = []
+        x = []
+        temp = input
+        for i in range (0,time):
+            SRM0.Time_ms = i*delta_t 
+            if len(temp)>0 and temp[0]==i:
+                self.neurons[0].input_spikes.append(i*delta_t)
+                self.neurons[0].spike_weights.append(3000)
+                temp.pop(0)
+            self.update_connections()
+
+            y1.append(u.first_neuron.membrane_potential)
+            y2.append(u.last_neuron.membrane_potential)
+            x.append(i*delta_t)
+
+        #fig, axs = plt.subplots(2)
+        #axs[0].plot
+        #axs[0].plot(x, y1, 'tab:orange')
+       # axs[1].plot(x, y2, 'tab:blue')
+       # for ax in axs.flat:
+       #     ax.set(ylim = [-80,1])
+       # axs.flat[0].set_title("First Neuron")
+       # axs.flat[1].set_title("Last Neuron")
+
+       # plt.show()
 
 
     ################################################################
@@ -128,23 +170,21 @@ def psp():
 def ahp():
     return 0
                 
-def partialE_partial_tk_i(desired_spike_times,neuron,tau,i):
+def partialE_partial_tk_i(desired_spike_times,spike_arrival_times,tau,i):
     temp_sum1 = 0
     temp_sum2 = 0
-    t = neuron.spike_arrival_times 
+    t = spike_arrival_times 
     s = desired_spike_times
-    for j in range(0,len(neuron.spike_arrival_times)):
+    for j in range(0,len(t)):
         temp_sum1+=(t[j]*((t[j]-(t[i])-(t[i]/tau)*(t[j]+t[i])))/((t[j]+t[i])**3)*np.exp(-((t[j]+t[i]))/tau))
-    for j in range(0,len(desired_spike_times)):
-        temp_sum2+=(t[j]*((t[j]-(s[i])-(t[i]/tau)*(s[j]+t[i])))/((s[j]+t[i])**3)*np.exp(-((s[j]+t[i]))/tau))
+    for j in range(0,len(s)):
+        temp_sum2+=(s[j]*((s[j]-t[i])-(t[i]/tau))*(s[j]+t[i])*np.exp(-((s[j]+t[i]))/tau))/(((s[j]+t[i])**3))
     return 2*(temp_sum1-temp_sum2)
 
 
 
 
-def partialt_partialW(i,j,output_spike_times,incoming_spike_times,weights,t_l,weight_at_psp_i):
-    s = output_spike_times
-    t = incoming_spike_times
+def partialt_partialW():
     psp(t[i][j]-t_l,weight_at_psp_i)
 
     
@@ -152,7 +192,7 @@ def partialt_partialW(i,j,output_spike_times,incoming_spike_times,weights,t_l,we
 
 
      ################################################################
-    ###################### NETWORK GENERATION ##################      
+     ###################### NETWORK GENERATION ##################      
     ################################################################      
 
 
@@ -181,33 +221,22 @@ def network_1to1(layers,neurons_per_layer):
 
 
 
-layers = 2
-neurons_per_layer = 10
+layers = 1
+neurons_per_layer = 5
 edge_list_test = network_1to1(layers,neurons_per_layer)
 u = neuron_matrix(neurons_per_layer*layers+2,edge_list_test)
 delta_t = .1
 
-y1= []
-y2 = []
-xn = []
-for i in range (0,3000):
-    SRM0.Time_ms = i*delta_t 
-    if i==200 or i==400 or i==600 or i==800:
-        u.neurons[0].input_spikes.append(i*delta_t)
-        u.neurons[0].spike_weights.append(3000)
-    u.update_connections()
+time_ = 3000
 
-    y1.append(u.first_neuron.membrane_potential)
-    y2.append(u.last_neuron.membrane_potential)
-    xn.append(i*delta_t)
 
-fig, axs = plt.subplots(2)
-axs[0].plot
-axs[0].plot(xn, y1, 'tab:orange')
-axs[1].plot(xn, y2, 'tab:blue')
-for ax in axs.flat:
-    ax.set(ylim = [-80,1])
-axs.flat[0].set_title("First Neuron")
-axs.flat[1].set_title("Last Neuron")
+input = [200,400,600,800]
+u.main(time_,delta_t,input)
 
-plt.show()
+#print(u.first_neuron.spike_arrival_times)
+#print(u.last_neuron.spike_arrival_times)
+#print(u.last_neuron.spike_weights)
+#print(u.last_neuron.weights_at_specific_spike_times)
+
+partialE_partial_tk_i([400,500,300],u.last_neuron.spike_arrival_times,1000,0)
+u.reset()
