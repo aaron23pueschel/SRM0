@@ -10,6 +10,9 @@ class SRM0:
     #static variables
     Time_ms = 0
     u_rest = -70
+    alpha = 1.5
+    A = 0
+    beta = 1
     threshold = -55
     spike_height = 0
     tau_1 = 20
@@ -17,75 +20,70 @@ class SRM0:
     delay = 0
 
     def __init__(self):
-        self.psp_weight = 1
-        self.ahp_weight = 10
-        self.last_spike = -np.inf    
-        self.membrane_potential = self.u_rest
-        self.input_spikes = [-np.inf]
-        self.connections = []
-        self.spike_arrival_times = []
-        self.spike_weights = [0]
-        self.weights_at_specific_spike_times = []
+        self.last_efferent_spike = -np.inf    
+        self.membrane_potential = -70
+        self.afferent_spikes = []       ## Incoming neurons
+        self.afferent_spikes_non_reset = []
+        self.afferent_spikes_grad = []
+        self.spike_weights = []
+        self.weights = []
+        self.delays = []
         self.in_spike = False
+        self.all_efferent_spikes = []   ## Outgoinng neurons
+        
     def reset(self):
-        self.psp_weight = 1
-        self.ahp_weight = 10
-        self.last_spike = -np.inf    
-        self.membrane_potential = self.u_rest
-        self.input_spikes = [-np.inf]
-        self.spike_arrival_times = []
-        self.spike_weights = [0]
-        self.weights_at_specific_spike_times = []
+        self.last_efferent_spike = -np.inf    
+        self.membrane_potential = -70
+        self.afferent_spikes = []       ## Incoming neurons
+        self.afferent_spikes_non_reset = []
+        self.afferent_spikes_grad = []
+        self.spike_weights = []
+        self.all_efferent_spikes = []   ## Outgoinng neurons
+        
+    def AHP(self,last_efferent_spike_time):
+        t = last_efferent_spike_time
+        if(t==np.inf or t==-np.inf or t<=0):        ## Heaviside
+            return 0
+        return -self.A*np.exp((-(SRM0.Time_ms-t))/self.tau_2)
+
+   
+    def PSP(self,afferent_spike_time,weight):
+        t = SRM0.Time_ms-afferent_spike_time
+        if(t==-np.inf or t==np.inf or t<=0):        ## Heaviside
+            return 0
+        return weight*(1/(self.alpha*np.sqrt(t)))*np.exp(-(self.beta*self.alpha**2)/t)*np.exp(-t/self.tau_1)
+
+    def sum_membrane(self):
+        sum = 0
         self.in_spike = False
-
-
-
-    def AHP(self,t):
-        if(t==np.inf):
-            return 0
-        return -self.ahp_weight*np.exp((-t)/self.tau_2)
-
-
-    def PSP(self,t,weight):
-        if(t==-np.inf or t==np.inf or t<0):
-            return 0
-        return weight*(t)*np.exp((-t)/self.tau_1)
-
-
-    def sum_MP(self):
-        temp = 0
-        for i in range(0,len(self.connections)):
-            if self.connections[i][0].in_spike:
-                self.input_spikes.append(self.connections[i][0].Time_ms)
-                self.spike_weights.append(self.connections[i][1])
-                self.weights_at_specific_spike_times.append([self.connections[i][0].Time_ms,self.connections[i][1]])
-        for i in range(0,len(self.input_spikes)):
-            if self.input_spikes[i]<=self.Time_ms:
-                temp+=self.PSP(self.Time_ms-self.input_spikes[i],self.spike_weights[i])
-            else:
-                break
-        if temp+self.AHP(self.Time_ms-self.last_spike)+self.u_rest>self.threshold:
-            self.spike()
-            self.in_spike = True
-        else:
-            self.membrane_potential = temp+self.AHP(self.Time_ms-self.last_spike)+self.u_rest
-            self.in_spike = False    
-
-    def update_membrane_potential(self):
-        self.sum_MP()
+        for i in range(0,len(self.afferent_spikes)):
+            for spike in self.afferent_spikes[i]:
+                sum += self.PSP(spike,self.weights[i])
+        #sum += self.AHP(self.last_efferent_spike)
+        membrane = sum + self.u_rest
+        if membrane < self.threshold:
+            self.membrane_potential = sum + self.u_rest
+            return
+        self.spike()
+    
     def spike(self):
-            self.membrane_potential = self.spike_height
-            self.last_spike = self.Time_ms
-            self.input_spikes.clear()
-            self.spike_weights.clear()
-            self.spike_arrival_times.append(self.Time_ms)
-    def spike_reset(self):
-            self.membrane_potential = self.u_rest
+        self.in_spike = True
+        self.membrane_potential = self.u_rest
+        self.last_efferent_spike = SRM0.Time_ms
+        self.all_efferent_spikes.append(SRM0.Time_ms)
+        self.reset_afferent_spikes()
+    def reset_afferent_spikes(self):
+        for i in range(0,len(self.afferent_spikes)):
+            self.afferent_spikes[i].clear()
+    def reset_afferent_spikes2(self):
+        for i in range(0,len(self.afferent_spikes)):
+            self.afferent_spikes_grad[i].clear()
+        
+
+
             
             
-       
-    def update_PSP_weight(self,new_weight):
-        self.psp_weight = new_weight
+            
 
 
 

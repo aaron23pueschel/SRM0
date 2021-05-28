@@ -2,6 +2,8 @@ import numpy as np
 from SRM0_ import SRM0
 import matplotlib.pyplot as plt
 import time as timer
+import math
+from scipy.misc import derivative
 
 
 
@@ -11,141 +13,235 @@ import time as timer
 
 
 class neuron_matrix:
-    def __init__(self,number_of_neurons,edge_list):
-        self.edge_list = edge_list
+    def __init__(self,number_of_neurons,input_vec,linear):
         self.number_of_neurons = number_of_neurons
-        self.neurons = []
-        self.init_neurons()
-        self.init_connections()
-        self.first_neuron
-        self.last_neuron
-        self.desired_spike_trains = []
+        self.all_afferent_spikes_non_reset = []
+        self.all_afferent_spikes = []
+        self.input_vec = input_vec
+        self.desired_vec = []
+        self.SRM0_list = []
+        self.gradient_count = 0
+        self.output_neuron = SRM0()
+        if linear:
+            self.init_linear()
+        else:
+            self.init_nonlinear()
+        self.learn = False
         
-    def reset(self):
-        SRM0.Time_ms = 0
-        for i in self.neurons:
-            i.reset()
-    def init_neurons(self):
+        self.learning_rate = 0
+        self.tau_gradient_descent = 0
+        
+        
+    def init_linear(self):
         for i in range(0,self.number_of_neurons):
-            self.neurons.append(SRM0())
-        self.first_neuron = self.neurons[0]
-        self.last_neuron = self.neurons[self.number_of_neurons-1]
+            rand_weight = np.random.randint(15,30)
+            self.output_neuron.weights.append(rand_weight)
+            rand_delay  = np.random.randint(4,9)/10
+            temp_vec = []
+            self.output_neuron.delays.append(rand_delay)
+            for j in range(0,len(self.input_vec)):
+                temp_vec.append(self.input_vec[j]+rand_delay)
+            self.output_neuron.afferent_spikes.append([])
+            self.output_neuron.afferent_spikes_non_reset.append([])
+            self.output_neuron.afferent_spikes_grad.append([])
+            self.output_neuron.spike_weights.append([])
+            self.all_afferent_spikes.append(temp_vec)
+            self.all_afferent_spikes_non_reset.append(temp_vec.copy())
+    def init_nonlinear(self):
         
-    def init_connections(self):
-        for edge in self.edge_list:
-            temp = []
-            temp.append(self.neurons[edge[0]])
-            temp.append(edge[2])
-            self.neurons[edge[1]].connections.append(temp)
-
-    def update_connections(self):
-        for i in self.neurons:
-            i.update_membrane_potential()
-    def partial_nk(self,t):
-        if t<=0:
-            return 0
-        return ((1/self.first_neuron.tau_2)*self.first_neuron.ahp_weight)*np.exp(-(t/self.first_neuron.tau_2))
-    def partial_psp(self,t,weight):
-        if t<=0:
-            return 0
-        return ((t-self.first_neuron.tau_1)*np.exp(-(t/self.first_neuron.tau_1)))*(weight/self.first_neuron.tau_1)
-    def gradient_descent_linear_update(self,tau):
-        for i in range(0,len(self.last_neuron.connections)):
-            temp = 0
-            for j in self.last_neuron.weights_at_specific_spike_times:
-                temp+=50*self.ddE_ddw_ij(tau,j[0],j[1])
-            self.last_neuron.connections[i][1]=self.last_neuron.connections[i][1]+temp
-    def ddE_ddw_ij(self,tau,arrival_time,weight):
-        temp = 0
-        for i in range(0,len(self.last_neuron.spike_arrival_times)):
-            t_l = self.last_neuron.spike_arrival_times[i]
-            actual = self.last_neuron.spike_arrival_times
-            desired = self.desired_spike_trains
-            temp+=self.ddtk_ddw_ij(t_l,arrival_time,weight)*self.ddE_dd_tk_i(desired,actual,tau,i)
-        return temp
-
-    def ddtk_ddw_ij(self,t_l,time,weight):
-        t_ij = time
-        sum_psp = self.last_neuron.PSP(SRM0.Time_ms-(t_ij-t_l),weight)
-        temp = 0
-        for k in self.last_neuron.spike_arrival_times:
-            if self.partial_nk(k-t_l) != 0:
-                temp+=self.partial_nk(SRM0.Time_ms-(k-t_l))*self.ddtk_ddw_ij(k,time,weight)
-        num = sum_psp+temp
-        temp2 = 0
-        for pairs in self.last_neuron.weights_at_specific_spike_times:
-            temp2+=self.partial_psp(SRM0.Time_ms-(pairs[0]-t_l),pairs[1])
-        temp3 = 0
-        for k in self.last_neuron.spike_arrival_times:
-            temp3+=self.partial_nk(SRM0.Time_ms-(k-t_l))
-        den = temp3+temp2
-        if den>0.00001:
-            return num/den
+        for i in range(0,self.number_of_neurons):
+            new_neuron = SRM0()
+            new_neuron.afferent_spikes.append([])
+            new_neuron.afferent_spikes_non_reset.append([])
+            new_neuron.afferent_spikes_grad.append([])
+            new_neuron.spike_weights.append([])
+            rand_weight = np.random.randint(15,30)
+            new_neuron.weights.append(rand_weight)
+            rand_delay  = 0#np.random.randint(4,9)/10
+            new_neuron.delay = rand_delay
+            temp_vec = []
+            new_neuron.delays.append(rand_delay)
+            self.SRM0_list.append(new_neuron)
+        self.SRM0_list.append(self.output_neuron)
+    
+        
+    def gradient_descent_linear_update(self):    
+        sum = 0
+        tau = self.tau_gradient_descent
+        learning_rate = self.learning_rate
+        for synapses in range(0,len(self.output_neuron.afferent_spikes_non_reset)):
+            for spikes in range(0,len(self.output_neuron.afferent_spikes_non_reset[synapses])):
+                sum += learning_rate*self.ddE_ddw_ij(tau,self.output_neuron.afferent_spikes_non_reset[synapses][spikes],self.output_neuron.spike_weights[synapses][spikes])
+            self.output_neuron.weights[synapses] = self.output_neuron.weights[synapses] - sum
+            
+    
+    def gradient_descent_nonlinear(self):
         return 0
-    def ddE_dd_tk_i(self,desired_spike_times,spike_arrival_times,tau,i):
+    def partial_tl_partial_t_ij(self,t_l,time,weight,efferent_spikes):
+       
+        t_ij = time
+        sum_psp = self.partial_psp(SRM0.Time_ms-(t_ij-t_l),weight)
+        if sum_psp==0:
+            return 0
+        for synapse in range(0,len(self.output_neuron.afferent_spikes_grad)):
+            for afferent_spikes in range(0,len(self.output_neuron.afferent_spikes_grad[synapse])):
+                s_ij = self.output_neuron.afferent_spikes_grad[synapse][afferent_spikes]
+                sum1 += self.partial_psp((SRM0.Time_ms-(s_ij-t_l)),self.output_neuron.spike_weights[synapse][afferent_spikes])
+        if sum1 ==0:
+            print("Divide by zero error here")
+            return 0
+        return sum_psp/sum1
+
+
+    def update_connections(self,learn):
+        spike_arrival_at_soma = False
+        for synapses in range(0,len(self.all_afferent_spikes)):
+                while len(self.all_afferent_spikes[synapses])>0 and self.all_afferent_spikes[synapses][0]<= SRM0.Time_ms:
+                    self.output_neuron.afferent_spikes[synapses].append(self.all_afferent_spikes[synapses][0])
+                    self.output_neuron.afferent_spikes_grad[synapses].append(self.all_afferent_spikes[synapses][0])
+                    self.output_neuron.afferent_spikes_non_reset[synapses].append(self.all_afferent_spikes[synapses][0])
+                    self.output_neuron.spike_weights[synapses].append(self.output_neuron.weights[synapses])
+                    #self.gradient_descent_linear_update()
+                    self.all_afferent_spikes[synapses].pop(0)
+                    spike_arrival_at_soma = True
+        self.output_neuron.sum_membrane()
+
+    def ddE_ddw_ij(self,tau,arrival_time,weight):   
+        temp = 0
+        for i in range(0,len(self.output_neuron.all_efferent_spikes)):
+            t_l = self.output_neuron.all_efferent_spikes[i]
+            actual = self.output_neuron.all_efferent_spikes
+            desired = self.desired_vec.copy()
+            temp += self.partialE_partial_tk(desired,actual,tau,i)*self.ddtk_ddw_ij(t_l,arrival_time,weight,self.output_neuron.all_efferent_spikes)
+        return temp                 
+    def reset(self,reset_weights,input_vec):
+        SRM0.Time_ms = 0
+        self.all_afferent_spikes.clear()
+        self.all_afferent_spikes_non_reset.clear()
+        
+        self.output_neuron.reset()
+        if reset_weights:
+            #self.output_neuron.weights.clear()
+            for i in range(0,len(self.output_neuron.weights)):
+                rand_weight = (np.random.randint(0,20)-10)/10
+                self.output_neuron.weights[i]+=rand_weight
+        for i in range(0,self.number_of_neurons):
+
+            temp_vec = []
+            self.output_neuron.afferent_spikes.append([])
+            self.output_neuron.afferent_spikes_non_reset.append([])
+            self.output_neuron.afferent_spikes_grad.append([])
+            self.output_neuron.spike_weights.append([])
+           # if reset_weights:
+              #  rand_weight = np.random.randint(30,50)
+               # self.output_neuron.weights.append(rand_weight)
+            for j in range(0,len(input_vec)):
+                temp_vec.append(input_vec[j]) #+self.output_neuron.delays[i])
+            self.all_afferent_spikes.append(temp_vec)
+            self.all_afferent_spikes_non_reset.append(temp_vec.copy())
+
+    def partialE_partial_tk(self,desired_spike_times,spike_output_times,tau,i):
+        
         temp_sum1 = 0
         temp_sum2 = 0
-        t = spike_arrival_times 
+        t = spike_output_times
         s = desired_spike_times
+        r = min(len(t),len(s))
+        
         for j in range(0,len(t)):
-            temp_sum1+=(t[j]*((t[j]-(t[i])-(t[i]/tau)*(t[j]+t[i])))/((t[j]+t[i])**3)*np.exp(-((t[j]+t[i]))/tau))
+            temp_sum1+=(t[j]*((t[j]-t[i])-(t[i]/tau)*(t[j]+t[i])))*np.exp(-(t[j]+t[i])/tau)/((t[j]+t[i])**3)
         for j in range(0,len(s)):
-            temp_sum2+=(s[j]*((s[j]-t[i])-(t[i]/tau))*(s[j]+t[i])*np.exp(-((s[j]+t[i]))/tau))/(((s[j]+t[i])**3))
+            if (s[j]-SRM0.Time_ms)<.001:
+                temp_sum2+=(s[j]*((s[j]-t[i])-(t[i]/tau)*(s[j]+t[i])))*np.exp(-(s[j]+t[i])/tau)/((s[j]+t[i])**3)
+            else:
+                break
+        x = (2*(temp_sum1-temp_sum2))
         return 2*(temp_sum1-temp_sum2)
 
-   
-    def main(self,time,delta_t,input,desired_spikes,num_in_first_layer):
-        temp = input.copy()
-        y1=[]
-        y2 =[]
-        x=[]
+    def PSP(self,t,weight):
+        if(t==-np.inf or t==np.inf or t<=0):        
+            return 0
+        return weight*(1/(SRM0.alpha*np.sqrt(t)))*np.exp(-(SRM0.beta*SRM0.alpha**2)/t)*np.exp(-t/SRM0.tau_1)
+    def ddtk_ddw_ij(self,t_l,time,weight,efferent_spikes):
        
+        t_ij = time
+        sum_psp = self.PSP(SRM0.Time_ms-(t_ij-t_l),weight)
+       
+        sum = 0
+        #efferent_spikes_ = efferent_spikes.copy()
+        #for spikes in efferent_spikes_:
+          #  efferent_spikes_.pop(len(efferent_spikes_)-1)
+          #  sum += self.partial_nk(spikes - t_l)#*self.ddtk_ddw_ij(t_l,time,weight,efferent_spikes_)
+        num = sum_psp  
+        sum1 = 0
+        for synapse in range(0,len(self.output_neuron.afferent_spikes_grad)):
+            for afferent_spikes in range(0,len(self.output_neuron.afferent_spikes_grad[synapse])):
+                s_ij = self.output_neuron.afferent_spikes_grad[synapse][afferent_spikes]
+                sum1 += self.partial_psp((SRM0.Time_ms-(s_ij-t_l)),self.output_neuron.spike_weights[synapse][afferent_spikes])
+        sum2 = 0
+        #if(sum1<0):
+           # print("here")
+        #for efferent_spikes in self.output_neuron.all_efferent_spikes:
+            #sum2 += self.partial_nk(efferent_spikes-t_l)
+        den = sum1 + sum2
+        #print(sum1)
+        if den!=0:
+            x = (num/den)
+            return num/den
+            
+        return 0
+    def partial_psp(self,t,weight):
+        if(t<0):
+            return 0
+        #def f(t):
+            #return self.PSP(t,weight)
+        #return derivative(f, t, dx=1e-6)
+        return(-((2*t**2+SRM0.tau_1*t-2*SRM0.alpha**2*SRM0.beta*SRM0.tau_1)*np.exp(-t/SRM0.tau_1-(SRM0.alpha**2*SRM0.beta)/t))/(2*SRM0.alpha*SRM0.tau_1*np.sqrt(math.pow(t,5))))
+
+    def main(self,time,delta_t,learn,desired_spikes):
+        x = []
+        y = []
+        self.learning_rate = .05
+        self.tau_gradient_descent = 150
+        temp = []
+        self.desired_vec = desired_spikes
+        random_update_time = []
+        first = True
+        #if learn:
+          #  self.learn = True
+            
+         #   if first:
+            #    for i in range(0,int((time*delta_t/5))):
+            #        random_update_time.append(np.random.randint(0,int(time)*delta_t))
+            #        first = False
+            #    random_update_time.sort()
         
-        for i in range (0,time):
-            SRM0.Time_ms = i*delta_t 
-            if len(temp)>0 and temp[0]==i:
-                for j in range(0,num_in_first_layer):
-                    self.neurons[j].input_spikes.append(i*delta_t)
-                    self.neurons[j].spike_weights.append(1000)
-                temp.pop(0)
-            self.update_connections()
-            if i%2000==0:
-                self.gradient_descent_linear_update(1000)
-        self.reset()
-        temp = input
-        for i in range (0,time):
-            SRM0.Time_ms = i*delta_t 
-            if len(temp)>0 and temp[0]==i:
-                for j in range(0,num_in_first_layer):
-                    self.neurons[j].input_spikes.append(i*delta_t)
-                    self.neurons[j].spike_weights.append(100)
-                    if len(temp)>0:
-                        temp.pop(0)
-            self.update_connections()
-            y1.append(u.last_neuron.membrane_potential)
-            y2.append(u.last_neuron.membrane_potential)
-            x.append(i*delta_t)
+        for T in range(0,time):
+            SRM0.Time_ms = delta_t*T
+            self.update_connections(learn)
+            y.append(self.output_neuron.membrane_potential)
+            x.append(SRM0.Time_ms)
+            if(self.output_neuron.in_spike and learn):
+                self.gradient_descent_linear_update()
+                self.output_neuron.reset_afferent_spikes2()
+                #self.output_neuron.afferent_spikes_non_reset.pop(0)
+                #self.output_neuron.all_efferent_spikes.pop(0)
+        #print(self.output_neuron.weights,": Neuron weights before learning ")  
+        
+        #print(self.output_neuron.weights,": Neuron weights after learning ")
+        #print(self.output_neuron.weights)
+        #print(self.output_neuron.all_efferent_spikes)
+        #print(self.output_neuron.all_efferent_spikes)
+        #plt.plot(x,y)
+        #plt.show()
+       
+
+        
+        return self.output_neuron.all_efferent_spikes
+        
 
 
-        #fig, axs = plt.subplots(2)
-        #axs[0].plot
-        #axs[0].plot(x, y1, 'tab:orange')
-        #axs[1].plot(x, y2, 'tab:blue')
-        #for ax in axs.flat:
-        #    ax.set(ylim = [-80,1])
-        #axs.flat[0].set_title("First Neuron")
-       # axs.flat[1].set_title("Last Neuron")
-
-        plt.plot(x,y1)
-        plt.show()
-
-
-    ################################################################
-    ###################### GRADIENTS AND TRAINING ##################      
-    ################################################################      
-    
-    
-
+       
        
 
 
