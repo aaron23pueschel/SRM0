@@ -27,6 +27,7 @@ class SRM0:
         self.afferent_spikes_grad = []
         self.spike_weights = []
         self.weights = []
+        self.weight = 0
         self.delays = []
         self.in_spike = False
         self.all_efferent_spikes = []   ## Outgoinng neurons

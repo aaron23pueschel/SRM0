@@ -24,8 +24,8 @@ class neuron_matrix:
         self.output_neuron = SRM0()
         if linear:
             self.init_linear()
-        else:
-            self.init_nonlinear()
+        #else:
+           # self.init_nonlinear()
         self.learn = False
         
         self.learning_rate = 0
@@ -47,21 +47,35 @@ class neuron_matrix:
             self.output_neuron.spike_weights.append([])
             self.all_afferent_spikes.append(temp_vec)
             self.all_afferent_spikes_non_reset.append(temp_vec.copy())
-    def init_nonlinear(self):
+    def init_nonlinear(self,total_neurons,neurons_per_layer):
         
-        for i in range(0,self.number_of_neurons):
+        for i in range(0,total_neurons):
             new_neuron = SRM0()
-            new_neuron.afferent_spikes.append([])
-            new_neuron.afferent_spikes_non_reset.append([])
-            new_neuron.afferent_spikes_grad.append([])
-            new_neuron.spike_weights.append([])
-            rand_weight = np.random.randint(15,30)
-            new_neuron.weights.append(rand_weight)
-            rand_delay  = 0#np.random.randint(4,9)/10
-            new_neuron.delay = rand_delay
-            temp_vec = []
-            new_neuron.delays.append(rand_delay)
+            for j in range(0,neurons_per_layer):
+                new_neuron.afferent_spikes.append([])
+                new_neuron.afferent_spikes_non_reset.append([])
+                new_neuron.afferent_spikes_grad.append([])
+                new_neuron.spike_weights.append([])
+                rand_weight = np.random.randint(15,30)
+                new_neuron.weights.append(rand_weight)
+                new_neuron.weight = rand_weight
+                rand_delay  = np.random.randint(4,9)/10
+                new_neuron.delay = rand_delay
+                temp_vec = []
+                new_neuron.delays.append(rand_delay)
             self.SRM0_list.append(new_neuron)
+        for k in range(0,neurons_per_layer):
+            self.output_neuron.afferent_spikes.append([])
+            self.output_neuron.afferent_spikes_non_reset.append([])
+            self.output_neuron.afferent_spikes_grad.append([])
+            self.output_neuron.spike_weights.append([])
+            rand_weight = np.random.randint(15,30)
+            self.output_neuron.weights.append(rand_weight)
+            self.output_neuron.weight = rand_weight
+            rand_delay  = np.random.randint(4,9)/10
+            self.output_neuron.delay = rand_delay
+            temp_vec = []
+            self.output_neuron.delays.append(rand_delay)
         self.SRM0_list.append(self.output_neuron)
     
         
@@ -105,6 +119,18 @@ class neuron_matrix:
                     self.all_afferent_spikes[synapses].pop(0)
                     spike_arrival_at_soma = True
         self.output_neuron.sum_membrane()
+    def update_connections_nonlinear(self,i,spikes):
+        spike_arrival_at_soma = False
+        for synapses in range(0,len(spikes)):
+                while len(spikes[synapses])>0 and spikes[synapses][0]<= SRM0.Time_ms:
+                    self.SRM0_list[i].afferent_spikes[synapses].append(spikes[synapses][0])
+                    self.SRM0_list[i].afferent_spikes_grad[synapses].append(spikes[synapses][0])
+                    self.SRM0_list[i].afferent_spikes_non_reset[synapses].append(spikes[synapses][0])
+                    self.SRM0_list[i].spike_weights[synapses].append(self.SRM0_list[i].weight)
+                    spikes[synapses].pop(0)
+                    spike_arrival_at_soma = True
+        self.SRM0_list[i].sum_membrane()
+        return spikes
 
     def ddE_ddw_ij(self,tau,arrival_time,weight):   
         temp = 0
